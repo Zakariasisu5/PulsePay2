@@ -1,32 +1,10 @@
 import { useAuth } from "../utils/AuthContext";
 import { useState, useEffect } from "react";
-import { ethers } from "ethers";
-import Web3Modal from "web3modal";
-import WalletConnectProvider from "@walletconnect/web3-provider";
-import CoinbaseWalletSDK from '@coinbase/wallet-sdk';
+import { connectWallet, disconnectWallet } from "../utils/wallet";
 import { useNavigate } from "react-router-dom";
 import '../index.css';
 
-// Custom injected wallet configs for OKX, Sui, Sonic with icons and display name
-const customInjected = (name, check, icon) => ({
-  display: {
-    name,
-    description: `Connect with ${name} browser extension`,
-    icon: icon, // SVG or image URL
-  },
-  package: null,
-  connector: async () => {
-    if (check()) {
-      return window.ethereum;
-    }
-    throw new Error(`${name} extension not found`);
-  }
-});
 
-// Example SVG icons (replace with your own or use image URLs)
-const okxIcon = `<svg width="32" height="32" viewBox="0 0 32 32"><circle fill="#000" cx="16" cy="16" r="16"/><text x="16" y="21" text-anchor="middle" fill="#fff" font-size="14" font-family="Arial">OKX</text></svg>`;
-const suiIcon = `<svg width="32" height="32" viewBox="0 0 32 32"><circle fill="#00e1e1" cx="16" cy="16" r="16"/><text x="16" y="21" text-anchor="middle" fill="#fff" font-size="14" font-family="Arial">SUI</text></svg>`;
-const sonicIcon = `<svg width="32" height="32" viewBox="0 0 32 32"><circle fill="#6c47ff" cx="16" cy="16" r="16"/><text x="16" y="21" text-anchor="middle" fill="#fff" font-size="14" font-family="Arial">SONIC</text></svg>`;
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
@@ -69,62 +47,24 @@ export default function Dashboard() {
     if (savedSub) setSubscription(JSON.parse(savedSub));
   }, []);
 
-  // Web3Modal config with extra wallets
-  const web3Modal = typeof window !== "undefined" && new Web3Modal({
-    cacheProvider: false,
-    providerOptions: {
-      injected: {
-        display: {
-          name: "MetaMask / Injected",
-          description: "Connect with the browser wallet extension"
-        },
-        package: null
-      },
-      walletconnect: {
-        package: WalletConnectProvider,
-        options: {
-          infuraId: "27e484dcd9e3efcfd25a83a78777cdf1"
-        }
-      },
-      coinbasewallet: {
-        package: CoinbaseWalletSDK,
-        options: {
-          appName: "PulsePay",
-          infuraId: "27e484dcd9e3efcfd25a83a78777cdf1",
-          rpc: "",
-          chainId: 1,
-          darkMode: true
-        }
-      },
-      okxwallet: customInjected(
-        "OKX Wallet",
-        () => window.okxwallet || (window.ethereum && window.ethereum.isOkxWallet),
-        okxIcon
-      ),
-      suiwallet: customInjected(
-        "Sui Wallet",
-        () => window.suiWallet || (window.ethereum && window.ethereum.isSuiWallet),
-        suiIcon
-      ),
-      sonicwallet: customInjected(
-        "Sonic Wallet",
-        () => window.sonicWallet || (window.ethereum && window.ethereum.isSonicWallet),
-        sonicIcon
-      ),
-    }
-  });
-
   async function handleConnectWallet() {
     try {
-      const instance = await web3Modal.connect();
-      const ethersProvider = new ethers.providers.Web3Provider(instance);
-      setProvider(ethersProvider);
-      const signer = ethersProvider.getSigner();
-      const address = await signer.getAddress();
-      setWalletAddress(address);
-      localStorage.setItem('pulsepay_wallet', address);
+      const address = await connectWallet(setWalletAddress);
+      if (address) {
+        // You can set provider here if needed for other operations
+        console.log("Wallet connected successfully:", address);
+      }
     } catch (err) {
       console.error("Wallet connection failed", err);
+    }
+  }
+
+  async function handleDisconnectWallet() {
+    try {
+      await disconnectWallet(setWalletAddress);
+      setProvider(null);
+    } catch (err) {
+      console.error("Wallet disconnection failed", err);
     }
   }
 
@@ -316,11 +256,7 @@ export default function Dashboard() {
       </div>
       <button
         className="ml-2 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full transition text-xs md:text-base"
-        onClick={() => {
-          setWalletAddress("");
-          setProvider(null);
-          localStorage.removeItem('pulsepay_wallet');
-        }}
+        onClick={handleDisconnectWallet}
       >
         Disconnect Wallet
       </button>

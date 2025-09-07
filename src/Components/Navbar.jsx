@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../utils/AuthContext";
 import { useState, useEffect } from "react";
-import { connectWallet } from "../utils/wallet"; // <-- import the shared wallet logic
+import { connectWallet, disconnectWallet } from "../utils/wallet"; // <-- import the shared wallet logic
 
 export default function Navbar() {
   const { user } = useAuth();
@@ -16,6 +16,10 @@ export default function Navbar() {
 
   async function handleConnectWallet() {
     await connectWallet(setWalletAddress); // uses shared logic, shows wallet modal
+  }
+
+  async function handleDisconnectWallet() {
+    await disconnectWallet(setWalletAddress);
   }
 
   const isActive = (to) =>
@@ -56,14 +60,24 @@ export default function Navbar() {
         <Link to="/" className={`navbar-link ${isActive("/")}`}>Home</Link>
         <Link to="/plans" className={`navbar-link ${isActive("/plans")}`}>Explore Plans</Link>
         <Link to="/dashboard" className={`navbar-link ${isActive("/dashboard")}`}>Dashboard</Link>
+        <Link to="/merchant" className={`navbar-link ${isActive("/merchant")}`}>Merchant</Link>
       </div>
 
       {/* Desktop Auth/Wallet */}
       <div className="hidden md:flex items-center gap-3">
         {user ? (
           walletAddress ? (
-            <div className="navbar-wallet bg-[#232344] px-3 py-2 rounded-full text-[#4deaff] font-semibold shadow border border-[#4deaff] text-xs md:text-base">
-              Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+            <div className="flex items-center gap-2">
+              <div className="navbar-wallet bg-[#232344] px-3 py-2 rounded-full text-[#4deaff] font-semibold shadow border border-[#4deaff] text-xs md:text-base">
+                Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+              </div>
+              <button 
+                onClick={handleDisconnectWallet} 
+                className="navbar-wallet border-red-500 text-red-400 text-xs md:text-base"
+                title="Disconnect Wallet"
+              >
+                Disconnect
+              </button>
             </div>
           ) : (
             <button onClick={handleConnectWallet} className="navbar-wallet">Connect Wallet</button>
@@ -95,11 +109,21 @@ export default function Navbar() {
             <Link to="/" className={`navbar-link text-xl ${isActive("/")}`} onClick={() => setMenuOpen(false)}>Home</Link>
             <Link to="/plans" className={`navbar-link text-xl ${isActive("/plans")}`} onClick={() => setMenuOpen(false)}>Explore Plans</Link>
             <Link to="/dashboard" className={`navbar-link text-xl ${isActive("/dashboard")}`} onClick={() => setMenuOpen(false)}>Dashboard</Link>
+            <Link to="/merchant" className={`navbar-link text-xl ${isActive("/merchant")}`} onClick={() => setMenuOpen(false)}>Merchant</Link>
             <div className="flex flex-col items-center gap-6 mt-10 w-full">
               {user ? (
                 walletAddress ? (
-                  <div className="navbar-wallet bg-[#232344] px-3 py-2 rounded-full text-[#4deaff] font-semibold shadow border border-[#4deaff] text-lg">
-                    Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="navbar-wallet bg-[#232344] px-3 py-2 rounded-full text-[#4deaff] font-semibold shadow border border-[#4deaff] text-lg">
+                      Connected: {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                    </div>
+                    <button 
+                      onClick={() => { handleDisconnectWallet(); setMenuOpen(false); }} 
+                      className="navbar-wallet border-red-500 text-red-400 text-lg"
+                      title="Disconnect Wallet"
+                    >
+                      Disconnect
+                    </button>
                   </div>
                 ) : (
                   <button onClick={() => { handleConnectWallet(); setMenuOpen(false); }} className="navbar-wallet text-lg">Connect Wallet</button>

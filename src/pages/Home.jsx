@@ -1,11 +1,17 @@
 import { Link } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
+import { ethers } from "ethers";
+import { keccak256, toUtf8Bytes, parseUnits, formatUnits } from "ethers";
 import '../index.css';
 import CreatePlanPopup from '../Components/CreatePlanPopup';
 import About from "./About"
+import WalletTest from '../Components/WalletTest';
+import TransactionExecutor from '../Components/TransactionExecutor';
+import { CONTRACTS, ARTIFACTS } from '../utils/addresses';
+import { getReadOnlyContract, getWriteContract } from '../utils/contractService';
 
 // Subscription Popup for demo
-function SubscriptionPopup({ open, plan, onClose, onConfirm }) {
+function SubscriptionPopup({ open, plan, onClose, onConfirm, isProcessing }) {
   if (!open) return null;
   return (
     <div style={{
@@ -21,13 +27,26 @@ function SubscriptionPopup({ open, plan, onClose, onConfirm }) {
         </h2>
         <p style={{ color: "#a78bfa", marginBottom: "1.2rem" }}>{plan?.price}</p>
         <p style={{ color: "#cbd5e1", marginBottom: "1.5rem" }}>
-          Confirm your subscription to <span style={{ color: "#4deaff", fontWeight: 700 }}>{plan?.title || plan?.name}</span> using your connected wallet.
+          {isProcessing ? (
+            <span style={{ color: "#4deaff", fontWeight: 700 }}>
+              Processing blockchain transaction... Please confirm in your wallet.
+            </span>
+          ) : (
+            <>
+              Confirm your subscription to <span style={{ color: "#4deaff", fontWeight: 700 }}>{plan?.title || plan?.name}</span> using your connected wallet.
+              <br />
+              <small style={{ color: "#a78bfa", fontSize: "0.9rem" }}>
+                This will create a plan and subscribe you using test tokens.
+              </small>
+            </>
+          )}
         </p>
         <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
           <button
             onClick={onConfirm}
+            disabled={isProcessing}
             style={{
-              background: "linear-gradient(90deg, #a78bfa 0%, #4deaff 100%)",
+              background: isProcessing ? "#666" : "linear-gradient(90deg, #a78bfa 0%, #4deaff 100%)",
               color: "#18182f",
               fontWeight: 700,
               borderRadius: "9999px",
@@ -35,13 +54,15 @@ function SubscriptionPopup({ open, plan, onClose, onConfirm }) {
               fontSize: "1.08rem",
               boxShadow: "0 2px 12px 0 rgba(77,234,255,0.10)",
               border: "none",
-              cursor: "pointer"
+              cursor: isProcessing ? "not-allowed" : "pointer",
+              opacity: isProcessing ? 0.6 : 1
             }}
           >
-            Confirm
+            {isProcessing ? "Processing..." : "Confirm"}
           </button>
           <button
             onClick={onClose}
+            disabled={isProcessing}
             style={{
               background: "none",
               color: "#a78bfa",
@@ -50,7 +71,8 @@ function SubscriptionPopup({ open, plan, onClose, onConfirm }) {
               padding: "0.7rem 2.2rem",
               fontSize: "1.08rem",
               border: "2px solid #a78bfa",
-              cursor: "pointer"
+              cursor: isProcessing ? "not-allowed" : "pointer",
+              opacity: isProcessing ? 0.6 : 1
             }}
           >
             Cancel
@@ -72,6 +94,7 @@ export default function Home() {
   const [animatedText, setAnimatedText] = useState("");
   const [popupOpen, setPopupOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const paragraph =
     "Create, manage, and subscribe to decentralized services with gasless transactions and secure blockchain payments.";
@@ -110,23 +133,105 @@ export default function Home() {
     setPopupOpen(true);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const walletAddress = getWalletAddress();
     if (!walletAddress) {
       alert("Please connect your wallet before subscribing to a plan.");
       setPopupOpen(false);
       return;
     }
-    // Save subscription to localStorage for Dashboard
-    const sub = {
-      plan: selectedPlan.title || selectedPlan.name,
-      balance: "0.00 USDC",
-      status: "Active",
-      renewal: new Date(Date.now() + 30*24*60*60*1000).toISOString().slice(0,10), // +30 days
-    };
-    localStorage.setItem('pulsepay_subscription', JSON.stringify(sub));
-    setPopupOpen(false);
-    alert(`Subscribed to ${selectedPlan.title || selectedPlan.name}!`);
+
+    setIsProcessing(true);
+
+    try {
+      // Get the provider and signer
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+
+      // Simple ERC20 ABI for basic functions
+      const erc20Abi = [
+        "function approve(address spender, uint256 amount) external returns (bool)",
+        "function balanceOf(address account) external view returns (uint256)",
+        "function mint(address to, uint256 amount) external",
+        "function transfer(address to, uint256 amount) external returns (bool)"
+      ];
+      
+      // Simple Subscription ABI
+      const subscriptionAbi = [
+        "function createPlan(bytes32 planId, string memory name, uint256 amount, uint256 interval) external",
+        "function subscribe(bytes32 planId) external",
+        "function getPlan(bytes32 planId) external view returns (string memory, uint256, uint256)"
+      ];
+      
+      // Get the subscription contract
+      const subscriptionContract = new ethers.Contract(CONTRACTS.SUBSCRIPTION, subscriptionAbi, signer);
+      
+             // Get the token contract
+       const tokenContract = new ethers.Contract(CONTRACTS.MOCK_ERC20, erc20Abi, signer);
+
+       console.log("Token contract address:", CONTRACTS.MOCK_ERC20);
+       console.log("Subscription contract address:", CONTRACTS.SUBSCRIPTION);
+
+       // Convert ETH price to token amount (assuming 1 ETH = 1000 MTK for demo)
+       const ethPrice = parseFloat(selectedPlan.price.replace(' ETH', ''));
+       const tokenAmount = parseUnits((ethPrice * 1000).toString(), 18); // Convert to wei
+
+       // Check token balance first
+       console.log("Checking token balance...");
+       const balance = await tokenContract.balanceOf(walletAddress);
+       console.log("Current balance:", formatUnits(balance, 18), "MTK");
+       console.log("Required amount:", formatUnits(tokenAmount, 18), "MTK");
+       
+       if (balance < tokenAmount) {
+         throw new Error(`Insufficient token balance. You have ${formatUnits(balance, 18)} MTK but need ${formatUnits(tokenAmount, 18)} MTK. Please mint more tokens first.`);
+       }
+
+      // First, approve tokens for the subscription contract
+      console.log("Approving tokens...");
+      console.log("Approving amount:", tokenAmount.toString());
+      const approveTx = await tokenContract.approve(CONTRACTS.SUBSCRIPTION, tokenAmount);
+      await approveTx.wait();
+      console.log("Tokens approved!");
+
+             // Create a plan first (if it doesn't exist)
+       const planName = selectedPlan.title || selectedPlan.name;
+       const planId = keccak256(toUtf8Bytes(planName));
+      
+      console.log("Creating plan...");
+      const createPlanTx = await subscriptionContract.createPlan(
+        planId,
+        planName,
+        tokenAmount,
+        30 * 24 * 60 * 60 // 30 days in seconds
+      );
+      await createPlanTx.wait();
+      console.log("Plan created!");
+
+      // Subscribe to the plan
+      console.log("Subscribing to plan...");
+      const subscribeTx = await subscriptionContract.subscribe(planId);
+      await subscribeTx.wait();
+      console.log("Subscription successful!");
+
+      // Save subscription to localStorage for Dashboard
+      const sub = {
+        plan: planName,
+                 balance: `${formatUnits(tokenAmount, 18)} MTK`,
+        status: "Active",
+        renewal: new Date(Date.now() + 30*24*60*60*1000).toISOString().slice(0,10), // +30 days
+      };
+      localStorage.setItem('pulsepay_subscription', JSON.stringify(sub));
+      
+      setPopupOpen(false);
+      alert(`Successfully subscribed to ${planName}! Transaction completed on blockchain.`);
+      
+    } catch (error) {
+      console.error("Transaction failed:", error);
+      alert(`Transaction failed: ${error.message}`);
+      setPopupOpen(false);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   // Replace the featured plans array with themed images
@@ -312,11 +417,23 @@ export default function Home() {
         </div>
       </section>
       <About/>
+      
+      {/* Temporary Wallet Test Component */}
+      <div className="py-20">
+        <WalletTest />
+      </div>
+      
+      {/* Transaction Executor Component */}
+      <div className="py-20">
+        <TransactionExecutor />
+      </div>
+      
       <SubscriptionPopup
         open={popupOpen}
         plan={selectedPlan}
         onClose={() => setPopupOpen(false)}
         onConfirm={handleConfirm}
+        isProcessing={isProcessing}
       />
     </div>
   );
