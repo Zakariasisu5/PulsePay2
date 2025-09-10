@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  base:process.env.BASE_URL || "/PulsePay2",
+  base: "./",
   define: {
     global: "window", // some libs expect global
     "process.env": {}, // prevent "process not defined"
